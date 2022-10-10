@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const orderModel = require("../model/orderModel");
+const jwt = require("jsonwebtoken");
 
 /*Get Information about all orders*/
 const getOrderInfo = async(req, res, next) => {
@@ -29,20 +30,17 @@ const getOrderInfo = async(req, res, next) => {
 };
 
 /*Get all orders*/
-const getAllOrders = async(req, res, next) => {
+const getAllOrders = async(req, res) => {
     try {
-        //Check if user is authenticated
-        const authenticatedUser = req.authenticatedUser;
-        if (!authenticatedUser) {
-            return res.status(403).send({ mesage: Forbidden });
-        }
-        if (authenticatedUser.role !== "admin") {
-            return res.status(401).status({ message: Unauthorized });
-        }
-        let orders;
-        //checking for query parameters
-        const { price, date } = req.query;
-
+        orderModel
+            .find()
+            .then((orders) => {
+                res.status(200).json(orders);
+            })
+            .catch((err) => {
+                console.log(err);
+                res.send(err);
+            });
         if (price) {
             const value = price === "asc" ? 1 : price === "desc" ? -1 : false;
             if (value)
@@ -56,44 +54,42 @@ const getAllOrders = async(req, res, next) => {
 
         return res.json({ status: true, orders });
     } catch (err) {
-        next(err);
+        res.send(err);
     }
 };
 
 /*Get order by id*/
-const getOrderById = async(req, res, next) => {
+const getOrderById = async(req, res) => {
     try {
-        //Check if user is authenticated
-        const authenticatedUser = req.authenticatedUser;
-        if (!authenticatedUser) {
-            return res.status(403).send({ mesage: Forbidden });
-        }
-        //  if(authenticatedUser.role !== 'admin'){
-        //      return res.status(401).status({message: Unauthorized})
-        //  }
-        const { orderId } = req.params;
-        const order = await orderModel.findById(orderId);
-        if (!order) {
+        //hash the password
+        req.body.password = await bcrypt.hash(req.body.password, 10);
+        const id = req.params.id;
+        orderModel
+            .findById(id)
+            .then((orders) => {
+                res.status(200).send(orders);
+            })
+            .catch((err) => {
+                console.log(err);
+                res.status(404).send(err);
+            });
+        if (!orderId) {
             return res.status(404).send.json({ status: false, order: null });
         }
         return res.status(404).json({ status: true, order });
     } catch (err) {
-        next(err);
+        res.send(err);
     }
 };
 
 /*Create a new order*/
-const createOrder = async(req, res, next) => {
+const createOrder = async(req, res) => {
     try {
-        //Check if user is authenticated
-        const authenticatedUser = req.authenticatedUser;
-        if (!authenticatedUser) {
-            return res.status(403).send({ mesage: Forbidden });
-        }
         const body = req.body;
 
-        const total_price = body.items.reduce((prev, curr) => {
-            return (prev += curr.quantity * curr.price);
+        const prices = body.items.map((item) => item.price);
+        const total_price = prices.reduce((prev, curr) => {
+            return prev + curr;
         }, 0);
 
         const orderObject = {
@@ -102,36 +98,32 @@ const createOrder = async(req, res, next) => {
             total_price,
         };
 
-        const order = new orderModel(orderObject);
-        order
-            .save()
-            .then((result) => {
-                return res.status(201).json({ status: true, result });
-            })
-            .catch((err) => {
-                res.send(500);
-                console.log("Error creating order", err.message);
-                return res.json({ error: "Error creating order" });
-            });
+        const createOrder = await orderModel.create(orders);
+        console.log(createOrder);
+        res
+            .status(201)
+            .json({ message: "order created succesfully", data: createOrder });
     } catch (err) {
-        next();
+        return err;
     }
 };
 
 /*Update order state*/
 const updateOrder = async(req, res, next) => {
     try {
-        //Check if user is authenticated
-        const authenticatedUser = req.authenticatedUser;
-        if (!authenticatedUser) {
-            return res.status(403).send({ mesage: Forbidden });
-        }
-        if (authenticatedUser.role !== "admin") {
-            return res.status(403).send({ message: "Unauthorized" });
-        }
-
         const { id } = req.params;
         const { state } = req.body;
+
+        order.lastUpdateAt = new Date();
+        orderModel
+            .findOneAndUpdate(id, order, { new: true })
+            .then((newOrder) => {
+                res.status(200).send(newOrder);
+            })
+            .catch((err) => {
+                console.log(err);
+                res.status(500).send(err);
+            });
 
         const order = await orderModel.findById(id);
 
@@ -157,16 +149,17 @@ const updateOrder = async(req, res, next) => {
 /*Delete order*/
 const deleteOrder = async(req, res, next) => {
     try {
-        //Check if user is authenticated
-        const authenticatedUser = req.authenticatedUser;
-        if (!authenticatedUser) {
-            return res.status(403).send({ mesage: Forbidden });
-        }
-        if (authenticatedUser.role !== "admin") {
-            return res.status(403).send({ message: "Unauthorized" });
-        }
-
         const { id } = req.params;
+
+        // orderModel
+        // .findByIdAndRemove(id)
+        // .then((order) => {
+        //     res.status(200).send(order);
+        // })
+        // .catch((err) => {
+        //     console.log(err);
+        //     res.status(500).send(err);
+        // });
 
         const order = await orderModel.findOne({ _id: id });
         const deleted = await order.remove();
@@ -174,7 +167,7 @@ const deleteOrder = async(req, res, next) => {
             return res.status(204).json({ status: true });
         }
     } catch (err) {
-        next(err);
+        res.status(500).send(err);
     }
 };
 
